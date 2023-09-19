@@ -1,0 +1,72 @@
+---
+- name: Build child dc
+  hosts: localchilddc
+
+  tasks:
+    - name: "Change the hostname"
+      win_hostname:
+        name: "Scranton-DC"
+
+    - name: DNS
+      win_shell: |
+        Set-DNSClientServerAddress -InterfaceIndex (Get-Netadapter | where-object { $_.Name -like "Eth*" }).InterfaceIndex.tostring() -ServerAddresses 192.168.21.129
+    
+    - name: Reboot if needed
+      win_reboot:
+        reboot_timeout: 600
+        post_reboot_delay: 30
+    
+    - name: Install Domain Services
+      win_shell: |
+        Add-WindowsFeature AD-Domain-Services
+        $password = ConvertTo-SecureString 'w3V!o^4:A1aN(6' -AsPlainText -Force
+        $credential = New-Object System.Management.Automation.PSCredential ('dunder-mifflin.local\d.wallace', $password)
+        Install-ADDSDomain -Credential $credential -NewDomainName "scranton" -ParentDomainName 'dunder-mifflin.local' -InstallDNS -CreateDNSDelegation -SiteName 'scranton' -SafeModeAdministratorPassword (ConvertTo-SecureString "Password123#" -AsPlainText -Force) -NoRebootOnCompletion -Force
+    
+    - name: Reboot if needed
+      win_reboot:
+        reboot_timeout: 600
+        post_reboot_delay: 30
+
+- name: Do the AD stuff
+  hosts: 192.168.21.148
+
+  vars:
+    ansible_user: Administrator 
+    ansible_password: Password123#
+    ansible_connection: winrm
+    ansible_winrm_server_cert_validation: ignore
+
+  tasks:
+    - name: Add user accounts
+      win_shell: |
+        Import-Module ActiveDirectory
+        New-ADUser -Name "Micheal Scott" -SamAccountName "m.scott" -UserPrincipalName "m.scott@scranton.dunder-mifflin.local" -GivenName "Micheal" -Surname "Scott" -AccountPassword (ConvertTo-SecureString 'ykpB@7@$DUQ8G-Ag' -AsPlainText -Force) -Enabled $true -Path "CN=Users,DC=scranton,DC=dunder-mifflin,DC=local"
+        Add-ADGroupMember -Identity "Domain Admins" -Members "m.scott"
+        New-ADUser -Name "Kevin Malone" -SamAccountName "k.malone" -UserPrincipalName "k.malone@scranton.dunder-mifflin.local" -GivenName "Kevin" -Surname "Malone" -AccountPassword (ConvertTo-SecureString 'Summer23' -AsPlainText -Force) -Enabled $true -Path "CN=Users,DC=scranton,DC=dunder-mifflin,DC=local"
+        New-ADUser -Name "Jim Halpert" -SamAccountName "j.halpert" -UserPrincipalName "j.halpert@scranton.dunder-mifflin.local" -GivenName "Jim" -Surname "Halpert" -AccountPassword (ConvertTo-SecureString '"R8Z7R)[F$tv@*' -AsPlainText -Force) -Enabled $true -Path "CN=Users,DC=scranton,DC=dunder-mifflin,DC=local"
+        New-ADUser -Name "Dwight Schrute" -SamAccountName "d.schrute" -UserPrincipalName "d.schrute@scranton.dunder-mifflin.local" -GivenName "Dwight" -Surname "Schrute" -AccountPassword (ConvertTo-SecureString 'nV(w6)jApwAW^)' -AsPlainText -Force) -Enabled $true -Path "CN=Users,DC=scranton,DC=dunder-mifflin,DC=local"
+        New-ADUser -Name "Creed Bratton" -SamAccountName "c.bratton" -UserPrincipalName "c.bratton@scranton.dunder-mifflin.local" -GivenName "Creed" -Surname "Bratton" -AccountPassword (ConvertTo-SecureString 'Ud5wm~Ju7&V5gn' -AsPlainText -Force) -Enabled $true -Path "CN=Users,DC=scranton,DC=dunder-mifflin,DC=local"
+
+    - name: ASREPRoast
+      win_shell: |
+        $userDN = "CN=Kevin Malone,CN=Users,DC=scranton,DC=dunder-mifflin,DC=local"
+        $currentFlags = (Get-ADUser $userDN -Properties userAccountControl).userAccountControl
+        $newFlags = $currentFlags -bor 0x400000
+        Set-ADUser -Identity $userDN -Replace @{userAccountControl=$newFlags}
+    
+    - name: winrm user
+      win_shell: |
+        net localgroup "Remote Management Users" /add scranton\c.bratton
+    
+    - name: Reset pwd
+      win_shell: |
+        $targetUserDN = "d.schrute"
+        $resetUserDN = "j.halpert"
+        $targetUser = Get-ADUser -Identity $targetUserDN
+        $resetUser = Get-ADUser -Identity $resetUserDN
+        $acl = Get-Acl "AD:\$($targetUser.DistinguishedName)"
+        $resetUserSid = $resetUser.SID
+        $accessRule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule($resetUserSid,[System.DirectoryServices.ActiveDirectoryRights]::ExtendedRight, [System.Security.AccessControl.AccessControlType]::Allow, [Guid]::Parse("00299570-246d-11d0-a768-00aa006e0529"))
+        $acl.AddAccessRule($accessRule)
+        Set-Acl "AD:\$($targetUser.DistinguishedName)" $acl

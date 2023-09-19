@@ -1,0 +1,297 @@
+---
+- name: Do the thing
+  hosts: dcs
+
+  tasks:
+    - name: Install Domain Services
+      win_shell: |
+        Add-WindowsFeature AD-Domain-Services
+
+- name: Set up Corp-DC
+  hosts: localparentdc
+  gather_facts: no
+
+  tasks:
+    - name: "Change the hostname"
+      win_hostname:
+        name: "Corporate-DC"
+    
+    - name: Set adm pwd
+      win_shell: |
+        net user Administrator 'Password123#'
+
+    - name: Reboot if needed
+      win_reboot:
+        reboot_timeout: 600
+        post_reboot_delay: 30
+    
+    - name: Install Domain Services
+      win_shell: |
+        Install-ADDSForest -DomainName "dunder-mifflin.local" -DomainNetbiosName "DUNDER-MIFFLIN" -InstallDNS -Force -SafeModeAdministratorPassword (ConvertTo-SecureString "Password123#" -AsPlainText -Force) -NoRebootOnCompletion -ForestMode "WinThreshold"
+    
+    - name: Reboot if needed
+      win_reboot:
+        reboot_timeout: 600
+        post_reboot_delay: 30
+
+- name: Build child dc
+  hosts: localchilddc
+  gather_facts: no
+
+  tasks:
+    - name: "Change the hostname"
+      win_hostname:
+        name: "Scranton-DC"
+    
+    - name: Set adm pwd
+      win_shell: |
+        net user Administrator 'Password123#'
+
+    - name: DNS
+      win_shell: |
+        Set-DNSClientServerAddress -InterfaceIndex (Get-Netadapter | where-object { $_.Name -like "Eth*" }).InterfaceIndex.tostring() -ServerAddresses 172.100.31.204
+    
+    - name: Reboot if needed
+      win_reboot:
+        reboot_timeout: 600
+        post_reboot_delay: 30
+
+- name: Get ready for child dc
+  hosts: 172.100.31.204
+  gather_facts: no
+
+  vars:
+    ansible_user: Administrator 
+    ansible_password: Password123#
+    ansible_connection: winrm
+    ansible_winrm_server_cert_validation: ignore
+
+  tasks:
+    - name: Add site
+      win_shell: |
+        New-ADReplicationSite -Name "scranton"
+
+    - name: Reboot if needed
+      win_reboot:
+        reboot_timeout: 600
+        post_reboot_delay: 30
+
+- name: Build child dc part 2
+  hosts: localchilddc
+  gather_facts: no
+
+  tasks:
+    - name: Install Domain Services
+      win_shell: |
+        $password = ConvertTo-SecureString 'Password123#' -AsPlainText -Force
+        $credential = New-Object System.Management.Automation.PSCredential ('dunder-mifflin.local\Administrator', $password)
+        Install-ADDSDomain -Credential $credential -NewDomainName "scranton" -ParentDomainName 'dunder-mifflin.local' -InstallDNS -CreateDNSDelegation -SiteName 'scranton' -SafeModeAdministratorPassword (ConvertTo-SecureString "Password123#" -AsPlainText -Force) -NoRebootOnCompletion -Force
+    
+    - name: Reboot if needed
+      win_reboot:
+        reboot_timeout: 600
+        post_reboot_delay: 30
+
+- name: Do the AD stuff for corpdc
+  hosts: 172.100.31.204
+  gather_facts: no
+
+  vars:
+    ansible_user: Administrator 
+    ansible_password: Password123#
+    ansible_connection: winrm
+    ansible_winrm_server_cert_validation: ignore
+
+  tasks:
+    - name: Add Domain Admin
+      win_shell: |
+        Import-Module ActiveDirectory
+        New-ADUser -Name "David Wallace" -SamAccountName "d.wallace" -UserPrincipalName "d.wallace@dunder-mifflin.local" -GivenName "David" -Surname "Wallace" -AccountPassword (ConvertTo-SecureString "w3V!o^4:A1aN(6" -AsPlainText -Force) -Enabled $true -Path "CN=Users,DC=dunder-mifflin,DC=local"
+        Add-ADGroupMember -Identity "Domain Admins" -Members "d.wallace"
+        Add-ADGroupMember -Identity "Enterprise Admins" -Members "d.wallace"
+    
+    - name: Reboot if needed
+      win_reboot:
+        reboot_timeout: 600
+        post_reboot_delay: 30
+    
+    - name: copy flag 10
+      win_copy:
+        src: ../flags/flag10.txt
+        dest: C:\Users\Administrator\Desktop\flag9.txt
+
+- name: Do the AD stuff for scrantondc
+  hosts: 172.100.31.152
+  gather_facts: no
+
+  vars:
+    ansible_user: Administrator 
+    ansible_password: Password123#
+    ansible_connection: winrm
+    ansible_winrm_server_cert_validation: ignore
+  
+  tasks:
+    - name: Pause for 2 minutes just incase
+      pause:
+        seconds: 120
+    
+    - name: Add user accounts
+      win_shell: |
+        Import-Module ActiveDirectory
+        New-ADUser -Name "Micheal Scott" -SamAccountName "m.scott" -UserPrincipalName "m.scott@scranton.dunder-mifflin.local" -GivenName "Micheal" -Surname "Scott" -AccountPassword (ConvertTo-SecureString 'ykpB@7@$DUQ8G-Ag' -AsPlainText -Force) -Enabled $true -Path "CN=Users,DC=scranton,DC=dunder-mifflin,DC=local"
+        Add-ADGroupMember -Identity "Domain Admins" -Members "m.scott"
+        New-ADUser -Name "Kevin Malone" -SamAccountName "k.malone" -UserPrincipalName "k.malone@scranton.dunder-mifflin.local" -GivenName "Kevin" -Surname "Malone" -AccountPassword (ConvertTo-SecureString 'Summer23' -AsPlainText -Force) -Enabled $true -Path "CN=Users,DC=scranton,DC=dunder-mifflin,DC=local"
+        New-ADUser -Name "Jim Halpert" -SamAccountName "j.halpert" -UserPrincipalName "j.halpert@scranton.dunder-mifflin.local" -GivenName "Jim" -Surname "Halpert" -AccountPassword (ConvertTo-SecureString '"R8Z7R)[F$tv@*' -AsPlainText -Force) -Enabled $true -Path "CN=Users,DC=scranton,DC=dunder-mifflin,DC=local"
+        New-ADUser -Name "Dwight Schrute" -SamAccountName "d.schrute" -UserPrincipalName "d.schrute@scranton.dunder-mifflin.local" -GivenName "Dwight" -Surname "Schrute" -AccountPassword (ConvertTo-SecureString 'nV(w6)jApwAW^)' -AsPlainText -Force) -Enabled $true -Path "CN=Users,DC=scranton,DC=dunder-mifflin,DC=local" -Description "flag4: CSEC{M4nu4l_3num3r47I0n_F7W!}"
+        New-ADUser -Name "Creed Bratton" -SamAccountName "c.bratton" -UserPrincipalName "c.bratton@scranton.dunder-mifflin.local" -GivenName "Creed" -Surname "Bratton" -AccountPassword (ConvertTo-SecureString 'Ud5wm~Ju7&V5gn' -AsPlainText -Force) -Enabled $true -Path "CN=Users,DC=scranton,DC=dunder-mifflin,DC=local"
+
+        New-ADUser -Name "attacker" -SamAccountName "attacker" -UserPrincipalName "attacker@scranton.dunder-mifflin.local" -GivenName "attacker" -Surname "attacker" -AccountPassword (ConvertTo-SecureString 'qvSXJ_EQ3:xZU::3' -AsPlainText -Force) -Enabled $true -Path "CN=Users,DC=scranton,DC=dunder-mifflin,DC=local"
+
+    - name: ASREPRoast
+      win_shell: |
+        $userDN = "CN=Kevin Malone,CN=Users,DC=scranton,DC=dunder-mifflin,DC=local"
+        $currentFlags = (Get-ADUser $userDN -Properties userAccountControl).userAccountControl
+        $newFlags = $currentFlags -bor 0x400000
+        Set-ADUser -Identity $userDN -Replace @{userAccountControl=$newFlags}
+    
+    - name: winrm user
+      win_shell: |
+        net localgroup "Remote Management Users" /add scranton\c.bratton
+    
+    - name: copy flag 9
+      win_copy:
+        src: ../flags/flag9.txt
+        dest: C:\Users\Administrator\Desktop\flag8.txt
+
+
+
+- name: Set up Client01
+  hosts: localclient01
+  gather_facts: no
+  
+  tasks:
+    - name: "Change the hostname"
+      win_hostname:
+        name: "Client01"
+
+- name: Set up Client02
+  hosts: localclient02
+  
+  tasks:
+    - name: "Change the hostname"
+      win_hostname:
+        name: "Client02"
+
+- name: Join Computers to domain
+  hosts: localclient02 localclient01
+  gather_facts: no
+  tasks:
+
+    - name: DNS
+      win_shell: |
+        Set-DNSClientServerAddress -InterfaceIndex (Get-Netadapter | where-object { $_.Name -like "Eth*" }).InterfaceIndex.tostring() -ServerAddresses 172.100.31.152
+    
+    - name: Reboot if needed
+      win_reboot:
+        reboot_timeout: 600
+        post_reboot_delay: 30
+
+    - name: Add computer to AD
+      win_shell: |
+        $password = ConvertTo-SecureString 'ykpB@7@$DUQ8G-Ag' -AsPlainText -Force
+        $credential = New-Object System.Management.Automation.PSCredential ('scranton.dunder-mifflin.local\m.scott', $password)
+        Add-Computer -DomainName "scranton.dunder-mifflin.local" -Credential $credential
+
+    - name: Reboot if needed
+      win_reboot:
+        reboot_timeout: 600
+        post_reboot_delay: 30
+
+
+- name: Client01 config
+  hosts: localclient01
+  gather_facts: no
+  tasks:
+    - name: Winrm user
+      win_shell: |
+        net localgroup "Backup Operators" "scranton\j.halpert" /add
+        net localgroup "Remote Management Users" /add scranton\k.malone
+        net localgroup "Remote Management Users" /add scranton\j.halpert
+        winrm quickconfig -force
+    
+    - name: Make share folder
+      win_shell: |
+        New-Item -Path "C:\Share" -ItemType Directory
+
+    - name: Copy flag to share
+      win_copy:
+        src: ../flags/flag1.txt
+        dest: C:\Share\flag1.txt
+    
+    - name: Copy usernames to share
+      win_copy:
+        src: ../users.txt
+        dest: C:\Share\usernames.txt
+
+    - name: Do the smb
+      win_shell: |
+        $p = @{ Name = 'Shared folder'; Path = 'C:\share'; FullAccess = 'EVERYONE' }
+        New-SmbShare @p
+    
+    - name: copy flag 2
+      win_copy:
+        src: ../flags/flag2.txt
+        dest: C:\Users\Public\Desktop\flag2.txt
+    
+    - name: ACL time
+      win_acl:
+        path: C:\Users\Public\Desktop\flag2.txt
+        user: k.malone
+        rights: Read
+        type: allow
+        state: present
+
+
+    - name: PWD vault
+      win_shell: |
+        New-Item -Path "C:\Password Vault" -ItemType Directory
+      
+    - name: copy pwd file
+      win_copy:
+        src: ../flags/Client01-password-vault.kdbx
+        dest: "C:\\Password Vault\\pass-vault.kdbx"
+    
+
+    - name: copy flag 5
+      win_copy:
+        src: ../flags/flag5.txt
+        dest: C:\Users\Administrator\Desktop\flag5.txt
+
+- name: Client02 config
+  hosts: localclient02
+  gather_facts: no
+  tasks:
+    - name: Winrm user
+      win_shell: |
+        net localgroup "Remote Management Users" /add scranton\d.schrute
+        winrm quickconfig -force
+    
+    - name: NetNTLMv1
+      win_shell: |
+        New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LmCompatibilityLevel" -Value 2 -PropertyType DWORD -Force
+      
+
+    - name: copy flag 6
+      win_copy:
+        src: ../flags/flag6.txt
+        dest: C:\Users\Public\Desktop\flag6.txt
+        
+    - name: copy flag 7
+      win_copy:
+        src: ../flags/flag7.txt
+        dest: C:\Users\Administrator\Desktop\flag7.txt
+    
+    - name: copy flag 6
+      win_copy:
+        src: ../flags/client02file
+        dest: C:\Users\Public\Documents\database.db

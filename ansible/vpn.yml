@@ -1,0 +1,73 @@
+---
+- name: enable root ssh
+  hosts: 3.27.158.38
+  become: yes
+
+  vars:
+    ansible_ssh_user: ubuntu
+    ansible_ssh_private_key_file: /home/eljay/adctf/terraform.pem
+
+  tasks:
+    - name: Drop sh file
+      copy:
+        src: "./regexisshit.sh"
+        dest: /opt
+        mode: "0644"
+      become: yes
+
+    - name: mark helper script as executable
+      command: "chmod +x /opt/regexisshit.sh"
+    
+    - name: Run the sh file
+      command: sudo /opt/regexisshit.sh
+
+- name: Install VPN
+  hosts: VPN
+  become: yes  # This allows becoming the sudo user
+  tasks:
+    - name: Drop conf file
+      copy:
+        src: "./options.conf"
+        dest: /opt
+        mode: "0644"
+      become: yes
+
+    - name: Grab installer
+      copy:
+        src: "./pivpn.sh"
+        dest: /opt
+        mode: "0644"
+      become: yes
+
+
+    - name: mark installer as executable
+      command: "chmod +x /opt/pivpn.sh"
+
+    - name: Run the installer
+      command: sudo /opt/pivpn.sh --unattended /opt/options.conf
+
+- name: Create and copy config files
+  hosts: VPN
+  become: yes
+  tasks:
+    - name: Create files
+
+      command: sudo pivpn -a nopass -n {{ item.user }} -d 1080
+      loop:
+        - { user: player1 }
+        - { user: player2 }
+        - { user: player3 }
+        - { user: player4 }
+        - { user: player5 }
+
+    - name: Get files
+      become: yes
+      fetch:
+        src: /home/ubuntu/ovpns/{{ item.user }}.ovpn
+        dest: /home/eljay/adctf
+      loop:
+        - { user: player1 }
+        - { user: player2 }
+        - { user: player3 }
+        - { user: player4 }
+        - { user: player5 }

@@ -1,0 +1,8 @@
+---
+- name: Build child dc
+  hosts: localchilddc
+  gather_facts: no
+  tasks:
+    - name: Set adm pwd
+      win_shell: |
+        net user Administrator 'Password123#'
