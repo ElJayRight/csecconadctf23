@@ -3,6 +3,7 @@ Heya!
 I built this for cseccon's ctf and now it's open source!
 
 #How to run this
+
 ##Cloud version (dont do this)
 You need an aws account with a iam user called terraform. You will also need to add this user to the aws-cli thingy in linux.
 Once this is done run these commands within the terraform folder.
@@ -14,6 +15,7 @@ Then change out the ip's in the inventory.ini file and buildmealab.yml and run:
 ```
 ansible-playbook -i inventory.ini buildmealab.yml
 ```
+
 
 ## Local machine (do this one)
 Set up 4 windows machines, 2 as windows server 2022 and 2 as windows 10 machines.

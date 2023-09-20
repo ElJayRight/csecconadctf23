@@ -3,23 +3,22 @@
   hosts: dcs
 
   tasks:
-    - name: Install Domain Services
+    - name: Download Domain Services
       win_shell: |
         Add-WindowsFeature AD-Domain-Services
+    - name: "Change the hostname"
+      win_hostname:
+        name: {{ host }}
+    
+    - name: Set adm pwd
+      win_shell: |
+        net user Administrator 'Password123#'
 
 - name: Set up Corp-DC
   hosts: localparentdc
   gather_facts: no
 
   tasks:
-    - name: "Change the hostname"
-      win_hostname:
-        name: "Corporate-DC"
-    
-    - name: Set adm pwd
-      win_shell: |
-        net user Administrator 'Password123#'
-
     - name: Reboot if needed
       win_reboot:
         reboot_timeout: 600
@@ -39,17 +38,9 @@
   gather_facts: no
 
   tasks:
-    - name: "Change the hostname"
-      win_hostname:
-        name: "Scranton-DC"
-    
-    - name: Set adm pwd
-      win_shell: |
-        net user Administrator 'Password123#'
-
     - name: DNS
       win_shell: |
-        Set-DNSClientServerAddress -InterfaceIndex (Get-Netadapter | where-object { $_.Name -like "Eth*" }).InterfaceIndex.tostring() -ServerAddresses 172.100.31.204
+        Set-DNSClientServerAddress -InterfaceIndex (Get-Netadapter | where-object { $_.Name -like "Eth*" }).InterfaceIndex.tostring() -ServerAddresses 3.25.253.115
     
     - name: Reboot if needed
       win_reboot:
@@ -57,7 +48,7 @@
         post_reboot_delay: 30
 
 - name: Get ready for child dc
-  hosts: 172.100.31.204
+  hosts: 3.25.253.115
   gather_facts: no
 
   vars:
@@ -93,7 +84,7 @@
         post_reboot_delay: 30
 
 - name: Do the AD stuff for corpdc
-  hosts: 172.100.31.204
+  hosts: 3.25.253.115
   gather_facts: no
 
   vars:
@@ -109,19 +100,14 @@
         New-ADUser -Name "David Wallace" -SamAccountName "d.wallace" -UserPrincipalName "d.wallace@dunder-mifflin.local" -GivenName "David" -Surname "Wallace" -AccountPassword (ConvertTo-SecureString "w3V!o^4:A1aN(6" -AsPlainText -Force) -Enabled $true -Path "CN=Users,DC=dunder-mifflin,DC=local"
         Add-ADGroupMember -Identity "Domain Admins" -Members "d.wallace"
         Add-ADGroupMember -Identity "Enterprise Admins" -Members "d.wallace"
-    
-    - name: Reboot if needed
-      win_reboot:
-        reboot_timeout: 600
-        post_reboot_delay: 30
-    
+   
     - name: copy flag 10
       win_copy:
         src: ../flags/flag10.txt
         dest: C:\Users\Administrator\Desktop\flag9.txt
 
 - name: Do the AD stuff for scrantondc
-  hosts: 172.100.31.152
+  hosts: 52.63.106.77
   gather_facts: no
 
   vars:
@@ -163,33 +149,18 @@
         src: ../flags/flag9.txt
         dest: C:\Users\Administrator\Desktop\flag8.txt
 
-
-
-- name: Set up Client01
-  hosts: localclient01
-  gather_facts: no
-  
-  tasks:
-    - name: "Change the hostname"
-      win_hostname:
-        name: "Client01"
-
-- name: Set up Client02
-  hosts: localclient02
-  
-  tasks:
-    - name: "Change the hostname"
-      win_hostname:
-        name: "Client02"
-
 - name: Join Computers to domain
-  hosts: localclient02 localclient01
+  hosts: workstations
   gather_facts: no
   tasks:
-
+    
+    - name: "Change the hostname"
+      win_hostname:
+        name: {{ host }}
+    
     - name: DNS
       win_shell: |
-        Set-DNSClientServerAddress -InterfaceIndex (Get-Netadapter | where-object { $_.Name -like "Eth*" }).InterfaceIndex.tostring() -ServerAddresses 172.100.31.152
+        Set-DNSClientServerAddress -InterfaceIndex (Get-Netadapter | where-object { $_.Name -like "Eth*" }).InterfaceIndex.tostring() -ServerAddresses 52.63.106.77
     
     - name: Reboot if needed
       win_reboot:
